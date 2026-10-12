@@ -1,4 +1,3 @@
-cat << 'EOF' > ss_perfect.sh
 #!/bin/bash
 set -e
 
@@ -83,7 +82,6 @@ SS_LINK="ss://${SS_B64}@${SERVER_IP}:${LISTEN_PORT}#SS_AES128_GCM"
 
 # ── 7. 推送节点链接到 Telegram ─────────────────────────────────
 log "正在向 Telegram 发送通知..."
-# 修复：修正了错误的 API URL 和变量写法
 TELEGRAM_RES=$(curl -s -w "\n%{http_code}" -X POST "https://telegram.org{TG_TOKEN}/sendMessage" \
     -d "chat_id=${TG_CHAT_ID}" \
     --data-urlencode "text=🔗 小火箭一键链接 (AES-128-GCM):
@@ -111,5 +109,3 @@ echo -e "${YELLOW}  🚀 终端直显——小火箭一键配置链接：${NC}"
 echo -e "  \033[4;36m${SS_LINK}\033[0m"
 echo -e "${GREEN}══════════════════════════════════════════════${NC}"
 echo ""
-EOF
-chmod +x ss_perfect.sh && ./ss_perfect.sh && rm ss_perfect.sh
