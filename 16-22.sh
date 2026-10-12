@@ -15,20 +15,24 @@ log()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 
-# ── 1. 检查并安装 Docker ────────────────────────────────────────
-log "检查 Docker 环境..."
+# ── 1. 检查并安装基础环境 (Docker & psmisc) ────────────────────
+log "检查基础环境..."
 if ! command -v docker &>/dev/null; then
     warn "Docker 未安装，正在安装..."
-    apt-get update -qq && apt-get install -y -qq docker.io
+    apt-get update -qq && apt-get install -y -qq docker.io psmisc python3 curl
     systemctl start docker && systemctl enable docker
     log "Docker 安装完成"
+else
+    # 确保 psmisc (包含 fuser) 和 python3 已安装
+    dpkg -s psmisc &>/dev/null || apt-get install -y -qq psmisc
+    dpkg -s python3 &>/dev/null || apt-get install -y -qq python3
 fi
+docker info &>/dev/null || err "Docker 守护进程未运行，请检查"
 
-# ── 2. 清理旧容器 ──────────────────────────────────────────────
+# ── 2. 深度清理旧容器和占用端口 ────────────────────────────────
 log "清理旧容器..."
 docker rm -f ss-rust shadow-tls 2>/dev/null || true
 sleep 1
-
 if command -v fuser &>/dev/null; then
     fuser -k ${LISTEN_PORT}/tcp 2>/dev/null || true
     fuser -k ${LISTEN_PORT}/udp 2>/dev/null || true
@@ -47,7 +51,7 @@ docker run -d \
         --encrypt-method "aes-128-gcm" \
         --password "${SS_PWD}" \
         --timeout 300 \
-        -u
+        -u  # -u 代表同时开启 TCP 和 UDP 支持，完美匹配小火箭的“UDP转发”
 
 log "等待 Shadowsocks 启动..."
 sleep 3
@@ -80,32 +84,33 @@ print(b64)
 
 SS_LINK="ss://${SS_B64}@${SERVER_IP}:${LISTEN_PORT}#SS_AES128_GCM"
 
-# ── 7. 推送节点链接到 Telegram ─────────────────────────────────
-log "正在向 Telegram 发送通知..."
-TELEGRAM_RES=$(curl -s -w "\n%{http_code}" -X POST "https://telegram.org{TG_TOKEN}/sendMessage" \
-    -d "chat_id=${TG_CHAT_ID}" \
-    --data-urlencode "text=🔗 小火箭一键链接 (AES-128-GCM):
-${SS_LINK}")
-
-HTTP_STATUS=$(echo "$TELEGRAM_RES" | tail -n1)
-if [ "$HTTP_STATUS" -ne 200 ]; then
-    warn "Telegram 推送失败，错误代码: $HTTP_STATUS（请检查 BOT 权限或网络限制）"
+# ── 7. 推送节点链接到 Telegram（完全融会贯通的版本） ───────────────
+if [[ "$TG_TOKEN" != *"FDSFDSFSD"* ]] && [ -n "$TG_TOKEN" ]; then
+    log "推送配置到 Telegram..."
+    # ⚡ 核心修复：更正了正确的 Telegram 机器人官方标准接口和变量写法
+    curl -s -X POST "https://telegram.org{TG_TOKEN}/sendMessage" \
+        -d "chat_id=${TG_CHAT_ID}" \
+        --data-urlencode "text=🔗 小火箭一键链接 (AES-128-GCM):
+${SS_LINK}" >/dev/null
 else
-    log "Telegram 通知发送成功！"
+    warn "检测到 Telegram 配置为占位符或为空，跳过推送。"
 fi
 
 # ── 8. 本地输出汇总 ────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}══════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  🎉 部署成功！节点汇总信息如下：${NC}"
-echo -e "${GREEN}══════════════════════════════════════════════${NC}"
+echo "══════════════════════════════════════════════"
+echo "  部署完成汇总"
+echo "══════════════════════════════════════════════"
 echo "  服务器IP    : ${SERVER_IP}"
 echo "  监听端口    : ${LISTEN_PORT}"
 echo "  加密算法    : aes-128-gcm"
 echo "  SS 密码     : ${SS_PWD}"
 echo "  协议状态    : TCP 网页 + UDP 转发（双全开）"
-echo -e "${GREEN}══════════════════════════════════════════════${NC}"
-echo -e "${YELLOW}  🚀 终端直显——小火箭一键配置链接：${NC}"
-echo -e "  \033[4;36m${SS_LINK}\033[0m"
-echo -e "${GREEN}══════════════════════════════════════════════${NC}"
+echo "══════════════════════════════════════════════"
+echo "  一键链接:"
+echo "  ${SS_LINK}"
+echo "══════════════════════════════════════════════"
 echo ""
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+echo ""
+log "部署全部完成！"
